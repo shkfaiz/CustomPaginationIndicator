@@ -1,0 +1,155 @@
+//
+//  ContentView.swift
+//  RotatingBanner
+//
+//  Created by Faizan on 2024-10-22.
+//
+
+import Combine
+import SwiftUI
+
+extension CaseIterable where Self: Equatable {
+    func next() -> Self {
+        let all = Self.allCases
+        guard let idx = all.firstIndex(of: self) else {
+            fatalError("Current value not found in all cases.")
+        }
+        let nextIndex = all.index(after: idx)
+        return all[nextIndex == all.endIndex ? all.startIndex : nextIndex]
+    }
+}
+
+enum BannerContentType: Int, CaseIterable, Identifiable {
+    case first = 0
+    case second = 1
+    case third = 2
+
+    var id: Self { self }
+
+    @ViewBuilder
+    func getView() -> some View {
+        switch self {
+        case .first:
+            Text("1️⃣")
+        case .second:
+            ZStack {
+                Color.green
+                Text("2️⃣")
+            }
+        case .third:
+            ZStack {
+                Color.orange
+                Text("3️⃣")
+            }
+        }
+    }
+}
+
+struct PagingBannerView: View {
+    @State var selectedItem: BannerContentType = .first
+    @StateObject var vm = PagingBannerViewModel()
+
+    @State var offset: CGFloat = 0
+    @State var currentInd: Int = 0
+
+    var body: some View {
+        TabView(selection: $selectedItem) {
+            ForEach(Array(zip(BannerContentType.allCases.indices, BannerContentType.allCases)), id: \.0) { index, item in
+                getBannerView(for: item)
+                    .tag(item)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .background(Color.black)
+        .frame(height: 200)
+        .onChange(of: selectedItem) { _, newValue in
+            vm.onChangeBanner(to: newValue)
+        }
+        .onReceive(vm.$bannerType) { banner in
+            withAnimation {
+                selectedItem = banner
+                currentInd = selectedItem.rawValue
+            }
+        }
+        .overlay(alignment: .bottom) {
+            getIndicatorView()
+        }
+    }
+
+    private func getBannerView(for item: BannerContentType) -> some View {
+        item.getView()
+            .overlay(
+                GeometryReader { proxy in
+                    Color.clear
+                }
+                .frame(width: 0, height: 0),
+                alignment: .leading
+            )
+    }
+
+    private func getIndicatorView() -> some View {
+        
+        HStack(spacing: 4) {
+            ForEach(Array(zip(BannerContentType.allCases.indices, BannerContentType.allCases)), id: \.0) { index, item  in
+                Capsule()
+                    .fill(currentInd < index ? Color.gray : Color.white)
+                    .frame(width: currentInd == index ? 16 : 6, height: 6)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12) // You can customize the shape and corner radius
+                .fill(Color.gray.opacity(0.2)) // Background color with some transparency
+                .padding([.horizontal, .vertical], -4) // Adjust padding if necessary to fit nicely
+        )
+        .padding(.bottom, 9)
+    }
+
+//    private func getOffset() -> CGFloat {
+//        let progress = CGFloat(selectedItem.rawValue) / getWidth()
+//        return 23 * progress
+//    }
+}
+
+extension View {
+    func getWidth() -> CGFloat {
+        return CGFloat(UIScreen.main.bounds.width)
+    }
+}
+
+
+class PagingBannerViewModel: ObservableObject {
+    @Published var bannerType: BannerContentType = .first
+
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        Timer.publish(every: 5, on: .main, in: .default)
+                    .autoconnect()
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        guard let self = self else { return }
+                        self.bannerType = self.bannerType.next()
+                    }
+                    .store(in: &cancellables)
+    }
+
+    func onChangeBanner(to type: BannerContentType) {
+            let all = BannerContentType.allCases
+            guard let index = all.firstIndex(of: type),
+                  let currentIndex = all.firstIndex(of: bannerType) else {
+                      return
+                  }
+
+            if currentIndex != index {
+                bannerType = type
+            }
+        }
+}
+
+#if DEBUG
+
+#Preview {
+    PagingBannerView()
+}
+
+#endif
